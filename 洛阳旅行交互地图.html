@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>洛阳周末旅行交互地图</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; color: #333; }
+.header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); color: #fff; padding: 20px 24px; }
+.header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.header p { font-size: 13px; opacity: 0.8; }
+.container { display: flex; height: calc(100vh - 76px); }
+.sidebar { width: 380px; background: #fff; overflow-y: auto; border-right: 1px solid #e0e0e0; flex-shrink: 0; }
+.sidebar-section { padding: 16px; border-bottom: 1px solid #f0f0f0; }
+.sidebar-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+.filter-group { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.filter-btn { padding: 5px 12px; border-radius: 20px; border: 1px solid #ddd; background: #fff; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+.filter-btn:hover { border-color: #0f3460; }
+.filter-btn.active { background: #0f3460; color: #fff; border-color: #0f3460; }
+.hotel-item { padding: 10px 12px; border: 1px solid #eee; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; }
+.hotel-item:hover { border-color: #0f3460; background: #f8f9ff; }
+.hotel-item .name { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.hotel-item .info { font-size: 11px; color: #888; display: flex; justify-content: space-between; }
+.hotel-item .price { color: #e74c3c; font-weight: 600; }
+.hotel-item .area-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; margin-right: 4px; }
+.area-longmen { background: #e3f2fd; color: #1565c0; }
+.area-luoyi { background: #f3e5f5; color: #7b1fa2; }
+.area-xigong { background: #e8f5e9; color: #2e7d32; }
+.area-laojun { background: #fff3e0; color: #e65100; }
+.area-train { background: #fce4ec; color: #c62828; }
+#map { flex: 1; }
+.popup-content { min-width: 200px; }
+.popup-content h4 { font-size: 14px; margin-bottom: 6px; }
+.popup-content p { font-size: 12px; color: #666; margin-bottom: 4px; line-height: 1.5; }
+.popup-content .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-top: 4px; }
+.legend { position: absolute; bottom: 20px; right: 20px; background: #fff; padding: 12px 16px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); z-index: 1000; font-size: 12px; }
+.legend div { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.legend div:last-child { margin-bottom: 0; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+.attraction-item { padding: 8px 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.attraction-item:hover { background: #e8eaf6; }
+.attraction-icon { font-size: 18px; }
+</style>
+</head>
+<body>
+<div class="header">
+<h1>🗺️ 洛阳周末旅行交互地图</h1>
+<p>7.3–7.5 南阳↔洛阳 | 华住会酒店(≤¥250) + 景点 + 交通</p>
+</div>
+<div class="container">
+<div class="sidebar">
+<div class="sidebar-section">
+<h3>🏨 华住会酒店 (≤¥250)</h3>
+<div class="filter-group">
+<button class="filter-btn active" data-filter="all">全部</button>
+<button class="filter-btn" data-filter="longmen">龙门站/新区</button>
+<button class="filter-btn" data-filter="luoyi">洛邑古城</button>
+<button class="filter-btn" data-filter="xigong">西工/应天门</button>
+<button class="filter-btn" data-filter="laojun">老君山</button>
+</div>
+<div id="hotel-list"></div>
+</div>
+<div class="sidebar-section">
+<h3>🎯 景点</h3>
+<div id="attraction-list"></div>
+</div>
+<div class="sidebar-section">
+<h3>🚉 车站 & 交通</h3>
+<div class="attraction-item" data-station="luoyang"><span class="attraction-icon">🚉</span> 洛阳站（普速）</div>
+<div class="attraction-item" data-station="longmen"><span class="attraction-icon">🚄</span> 洛阳龙门站（高铁）</div>
+<div style="font-size:11px; color:#888; margin-top:8px; padding:8px; background:#f5f5f5; border-radius:6px;">
+🚇 两站互通：地铁 2 号线，32 分钟，¥3<br>
+🚗 打车：30 分钟，¥30 左右
+</div>
+</div>
+</div>
+<div id="map"></div>
+</div>
+
+<script>
+const hotels = [
+{ name:"海友洛阳龙门站酒店", price:195, area:"longmen", areaTag:"龙门站/新区", lat:34.6185, lng:112.4648, reviews:1503, addr:"通衢路209号(龙门站东广场)" },
+{ name:"海友洛阳市政府龙门大道酒店", price:143, area:"longmen", areaTag:"龙门站/新区", lat:34.6220, lng:112.4680, reviews:3886, addr:"开元大道74号" },
+{ name:"海友洛阳市政府龙门站酒店", price:197, area:"longmen", areaTag:"龙门站/新区", lat:34.6195, lng:112.4660, reviews:879, addr:"牡丹大道与厚载门街交叉口" },
+{ name:"海友洛阳龙门站兴洛湖地铁站酒店", price:179, area:"longmen", areaTag:"龙门站/新区", lat:34.6160, lng:112.4620, reviews:940, addr:"关林路与永泰街交叉口" },
+{ name:"海友洛阳隋唐城中国国花园酒店", price:152, area:"longmen", areaTag:"龙门站/新区", lat:34.6240, lng:112.4700, reviews:614, addr:"建春门大街与卫国路交叉口" },
+{ name:"海友洛阳洛邑古城酒店", price:179, area:"luoyi", areaTag:"洛邑古城", lat:34.6820, lng:112.4820, reviews:3170, addr:"中州东路2号楼" },
+{ name:"海友洛阳洛邑古城丽景门酒店", price:161, area:"luoyi", areaTag:"洛邑古城", lat:34.6840, lng:112.4850, reviews:553, addr:"九都东路321号" },
+{ name:"海友洛阳洛邑古城应天门酒店", price:237, area:"luoyi", areaTag:"洛邑古城", lat:34.6800, lng:112.4780, reviews:2171, addr:"唐宫东路263号(大唐花市内)" },
+{ name:"海友洛阳应天门丽景门地铁站店", price:185, area:"luoyi", areaTag:"洛邑古城", lat:34.6830, lng:112.4870, reviews:651, addr:"义勇前街66号(丽景门地铁站A口)" },
+{ name:"海友洛阳应天门酒店", price:200, area:"xigong", areaTag:"西工/应天门", lat:34.6860, lng:112.4720, reviews:6964, addr:"凯旋东路34号(应天门南广场西280米)" },
+{ name:"海友洛阳应天门景区酒店", price:249, area:"xigong", areaTag:"西工/应天门", lat:34.6870, lng:112.4700, reviews:3636, addr:"中州中路与定鼎大道西200米" },
+{ name:"海友洛阳小街天府解放路地铁站店", price:166, area:"xigong", areaTag:"西工/应天门", lat:34.6850, lng:112.4680, reviews:7593, addr:"唐宫西路与解放路交叉口" },
+{ name:"海友洛阳周王城广场小街天府酒店", price:166, area:"xigong", areaTag:"西工/应天门", lat:34.6880, lng:112.4650, reviews:3932, addr:"人民东路3号" },
+{ name:"海友洛阳王府井王城公园地铁站店", price:161, area:"xigong", areaTag:"西工/应天门", lat:34.6890, lng:112.4620, reviews:3200, addr:"王城大道与凯旋路交叉口" },
+{ name:"海友洛阳火车站酒店", price:175, area:"xigong", areaTag:"西工/应天门", lat:34.6900, lng:112.4550, reviews:833, addr:"道南路72号" },
+{ name:"海友洛阳火车站应天门地铁站店", price:193, area:"xigong", areaTag:"西工/应天门", lat:34.6910, lng:112.4580, reviews:3205, addr:"玄武门大街与嘉豫门大街" },
+{ name:"海友洛阳王城公园万达酒店", price:143, area:"xigong", areaTag:"西工/应天门", lat:34.6920, lng:112.4500, reviews:4505, addr:"凯旋路与涧东路南100米" },
+{ name:"海友洛阳王城公园七里河地铁站店", price:136, area:"xigong", areaTag:"西工/应天门", lat:34.6700, lng:112.4300, reviews:1024, addr:"延安路与黄河路交叉口" },
+{ name:"海友洛阳牡丹广场万达酒店", price:185, area:"xigong", areaTag:"西工/应天门", lat:34.6650, lng:112.4250, reviews:2826, addr:"科技馆南路中侨大厦" },
+{ name:"海友洛阳栾川老君山正大门酒店", price:249, area:"laojun", areaTag:"老君山", lat:33.7230, lng:111.6850, reviews:4454, addr:"老君山景区验票大门100米" },
+];
+
+const attractions = [
+{ name:"龙门石窟", icon:"🗿", lat:34.5558, lng:112.4715, desc:"世界文化遗产，建议7:30-8:30到", tag:"必去" },
+{ name:"白马寺", icon:"🛕", lat:34.7080, lng:112.5000, desc:"中国第一古刹，7:40开始入园", tag:"人文" },
+{ name:"老君山", icon:"⛰️", lat:33.7200, lng:111.6800, desc:"栾川县，距市区2-2.5h车程", tag:"远郊" },
+{ name:"洛阳博物馆", icon:"🏛️", lat:34.6250, lng:112.4750, desc:"免费需预约，周一闭馆", tag:"避暑" },
+{ name:"应天门/明堂天堂", icon:"🏯", lat:34.6850, lng:112.4750, desc:"隋唐洛阳城核心，17:30后夜游", tag:"夜游" },
+{ name:"洛邑古城/丽景门", icon:"🏮", lat:34.6830, lng:112.4880, desc:"夜市/汉服/十字街吃喝", tag:"夜市" },
+{ name:"九洲池", icon:"🌊", lat:34.6870, lng:112.4780, desc:"隋唐皇家园林，夜景出片", tag:"拍照" },
+{ name:"洛阳古墓博物馆", icon:"⚰️", lat:34.7100, lng:112.4900, desc:"地下展陈多，高温天首选", tag:"小众" },
+];
+
+const stations = [
+{ name:"洛阳站", icon:"🚉", lat:34.6870, lng:112.4530, desc:"普速列车到达，近白马寺/汽车站" },
+{ name:"洛阳龙门站", icon:"🚄", lat:34.6200, lng:112.4640, desc:"高铁到达，近龙门石窟" },
+];
+
+const map = L.map('map', { center: [34.6600, 112.4700], zoom: 11 });
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
+
+const markers = {};
+const hotelIcon = L.divIcon({ html:'<div style="background:#e74c3c;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">住</div>', iconSize:[24,24], iconAnchor:[12,12], className:'' });
+const attrIcon = L.divIcon({ html:'<div style="background:#2ecc71;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">🎯</div>', iconSize:[28,28], iconAnchor:[14,14], className:'' });
+const stationIcon = L.divIcon({ html:'<div style="background:#3498db;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">🚉</div>', iconSize:[30,30], iconAnchor:[15,15], className:'' });
+const laojunIcon = L.divIcon({ html:'<div style="background:#e67e22;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">住</div>', iconSize:[24,24], iconAnchor:[12,12], className:'' });
+
+hotels.forEach((h, i) => {
+const icon = h.area === 'laojun' ? laojunIcon : hotelIcon;
+const m = L.marker([h.lat, h.lng], { icon }).addTo(map);
+m.bindPopup(`<div class="popup-content"><h4>${h.name}</h4><p>💰 ¥${h.price}/晚 | ⭐ ${h.reviews}条评论</p><p>📍 ${h.addr}</p><span class="tag" style="background:#e74c3c;color:#fff">华住会</span></div>`);
+markers['hotel_'+i] = m;
+});
+
+attractions.forEach((a, i) => {
+const m = L.marker([a.lat, a.lng], { icon: attrIcon }).addTo(map);
+m.bindPopup(`<div class="popup-content"><h4>${a.icon} ${a.name}</h4><p>${a.desc}</p><span class="tag" style="background:#2ecc71;color:#fff">${a.tag}</span></div>`);
+markers['attr_'+i] = m;
+});
+
+stations.forEach((s, i) => {
+const m = L.marker([s.lat, s.lng], { icon: stationIcon }).addTo(map);
+m.bindPopup(`<div class="popup-content"><h4>${s.icon} ${s.name}</h4><p>${s.desc}</p></div>`);
+markers['station_'+i] = m;
+});
+
+// Sidebar hotel list
+function renderHotels(filter='all') {
+const list = document.getElementById('hotel-list');
+const filtered = filter === 'all' ? hotels : hotels.filter(h => h.area === filter);
+filtered.sort((a,b) => a.price - b.price);
+list.innerHTML = filtered.map((h,i) => {
+const idx = hotels.indexOf(h);
+return `<div class="hotel-item" onclick="focusMarker('hotel_${idx}')">
+<div class="name">${h.name}</div>
+div class="info"><span><span class="area-tag area-${h.area}">${h.areaTag}</span>⭐${h.reviews}条</span><span class="price">¥${h.price}</span></div>
+</div>`;
+}).join('');
+}
+
+function focusMarker(key) {
+const m = markers[key];
+if (m) { map.setTarget(m.getLatLng(), 15); m.openPopup(); }
+}
+
+renderHotels();
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+btn.addEventListener('click', () => {
+document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+btn.classList.add('active');
+renderHotels(btn.dataset.filter);
+});
+});
+
+// Attraction list
+const attrList = document.getElementById('attraction-list');
+attrList.innerHTML = attractions.map((a,i) => `<div class="attraction-item" onclick="focusMarker('attr_${i}')"><span class="attraction-icon">${a.icon}</span><div><div style="font-weight:600">${a.name}</div><div style="font-size:11px;color:#888">${a.desc}</div></div></div>`).join('');
+
+// Station click
+document.querySelectorAll('[data-station]').forEach(el => {
+el.addEventListener('click', () => {
+const s = el.dataset.station;
+const idx = stations.findIndex(st => st.name.includes(s==='luoyang'?'洛阳站':''));
+if (idx >= 0) focusMarker('station_'+idx);
+});
+});
+
+// Add legend
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = () => {
+const div = L.DomUtil.create('div', 'legend');
+div.innerHTML = `<div><div class="legend-dot" style="background:#e74c3c"></div>华住会酒店</div><div><div class="legend-dot" style="background:#2ecc71"></div>景点</div><div><div class="legend-dot" style="background:#3498db"></div>火车站</div><div><div class="legend-dot" style="background:#e67e22"></div>老君山住宿</div>`;
+return div;
+};
+legend.addTo(map);
+</script>
+</body>
+</html>
